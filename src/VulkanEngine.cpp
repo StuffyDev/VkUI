@@ -1,5 +1,6 @@
 #include "VulkanEngine.hpp"
 #include "Pipeline.hpp"
+#include "Model.hpp"
 #include "Logger.hpp"
 
 #include <stdexcept>
@@ -16,6 +17,7 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR&, GLFWwindow*);
 VulkanEngine::VulkanEngine() { Log::info("VulkanEngine created."); }
 
 VulkanEngine::~VulkanEngine() {
+    m_model.reset();
     m_pipeline.reset();
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     if (m_renderPass) vkDestroyRenderPass(m_device, m_renderPass, nullptr);
@@ -46,6 +48,7 @@ void VulkanEngine::init(GLFWwindow* window) {
     createPipeline();
     createFramebuffers();
     createCommandPool();
+    loadModels();
     createCommandBuffers();
     createSyncObjects();
     Log::info("Vulkan Engine initialization complete.");
@@ -53,15 +56,11 @@ void VulkanEngine::init(GLFWwindow* window) {
 
 void VulkanEngine::drawFrame() {
     vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
-    
     uint32_t imageIndex;
     vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
-
     vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
-    
     vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
     recordCommandBuffer(m_commandBuffers[m_currentFrame], imageIndex);
-
     VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     VkSemaphore waitSemaphores[] = {m_imageAvailableSemaphores[m_currentFrame]};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -73,11 +72,8 @@ void VulkanEngine::drawFrame() {
     VkSemaphore signalSemaphores[] = {m_renderFinishedSemaphores[m_currentFrame]};
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
-
-    if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrame]) != VK_SUCCESS) {
+    if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrame]) != VK_SUCCESS)
         throw std::runtime_error("failed to submit draw command buffer!");
-    }
-
     VkPresentInfoKHR presentInfo{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = signalSemaphores;
@@ -85,10 +81,17 @@ void VulkanEngine::drawFrame() {
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapChains;
     presentInfo.pImageIndices = &imageIndex;
-    
     vkQueuePresentKHR(m_presentQueue, &presentInfo);
-
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void VulkanEngine::loadModels() {
+    std::vector<Model::Vertex> vertices = {
+        {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+        {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+    };
+    m_model = std::make_unique<Model>(m_physicalDevice, m_device, vertices);
 }
 
 void VulkanEngine::createInstance() {
@@ -338,7 +341,8 @@ void VulkanEngine::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t i
         vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
         VkRect2D scissor{{0, 0}, m_swapchainExtent};
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-        vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+        m_model->bind(commandBuffer);
+        m_model->draw(commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
         throw std::runtime_error("failed to record command buffer!");

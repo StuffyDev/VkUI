@@ -7,6 +7,7 @@
 #include <memory>
 
 class Pipeline; 
+class Model;
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -27,6 +28,7 @@ public:
     VkDevice getDevice() const { return m_device; }
 
 private:
+    void loadModels(); // <-- Here is the fix
     void createFramebuffers();
     void createCommandPool();
     void createCommandBuffers();
@@ -63,6 +65,7 @@ private:
     VkRenderPass m_renderPass;
     VkPipelineLayout m_pipelineLayout;
     std::unique_ptr<Pipeline> m_pipeline;
+    std::unique_ptr<Model> m_model;
 
     VkCommandPool m_commandPool;
     std::vector<VkCommandBuffer> m_commandBuffers;
