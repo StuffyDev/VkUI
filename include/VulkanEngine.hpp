@@ -28,7 +28,7 @@ public:
     VkDevice getDevice() const { return m_device; }
 
 private:
-    void loadModels(); // <-- Here is the fix
+    void buildRenderObjects(); // <-- ВОТ ОНО, ИСПРАВЛЕНИЕ
     void createFramebuffers();
     void createCommandPool();
     void createCommandBuffers();
@@ -65,7 +65,7 @@ private:
     VkRenderPass m_renderPass;
     VkPipelineLayout m_pipelineLayout;
     std::unique_ptr<Pipeline> m_pipeline;
-    std::unique_ptr<Model> m_model;
+    std::vector<std::unique_ptr<Model>> m_renderObjects;
 
     VkCommandPool m_commandPool;
     std::vector<VkCommandBuffer> m_commandBuffers;

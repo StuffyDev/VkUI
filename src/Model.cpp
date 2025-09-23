@@ -6,8 +6,8 @@
 
 Model::Model(VkPhysicalDevice physicalDevice, VkDevice device, const std::vector<Vertex>& vertices) : m_device(device) {
     m_vertexCount = static_cast<uint32_t>(vertices.size());
-    if (m_vertexCount < 3) {
-        throw std::runtime_error("Vertex count must be at least 3");
+    if (m_vertexCount == 0) {
+        throw std::runtime_error("Cannot create a model with 0 vertices");
     }
     createVertexBuffer(physicalDevice, vertices);
 }

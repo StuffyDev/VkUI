@@ -1,53 +1,46 @@
 # Compiler
 CXX = g++
 
+# Compiler flags
+CXXFLAGS = -std=c++17 -g -Wall
+
 # Directories
 SRCDIR = src
 INCDIR = include
 BUILDDIR = build
 BINDIR = bin
+
+# Executable name
 TARGET = $(BINDIR)/vkui_app
 
-# Default build type is DEBUG
-BUILD_TYPE ?= DEBUG
+# Find all .cpp files recursively in SRCDIR
+SOURCES = $(shell find $(SRCDIR) -name '*.cpp')
 
-# Compiler flags
-CXXFLAGS = -std=c++17 -Wall -I$(INCDIR)
-ifeq ($(BUILD_TYPE), DEBUG)
-	CXXFLAGS += -g
-	# In DEBUG mode, we define _DEBUG macro
-	CPPFLAGS += -D_DEBUG
-else
-	CXXFLAGS += -O3
-	# In RELEASE mode, we define NDEBUG to disable asserts and validation layers
-	CPPFLAGS += -DNDEBUG
-endif
-
-# Sources and Objects
-SOURCES = $(wildcard $(SRCDIR)/*.cpp)
+# Generate object file paths based on source paths
 OBJECTS = $(patsubst $(SRCDIR)/%.cpp, $(BUILDDIR)/%.o, $(SOURCES))
 
-# Linker flags from pkg-config
+# Library flags from pkg-config
+INCLUDES = -I$(INCDIR)
 LDFLAGS = $(shell pkg-config --libs glfw3 vulkan)
 
 # Default target
 all: $(TARGET)
 
+# Rule to link the executable
 $(TARGET): $(OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
-	@echo "Build finished [$(BUILD_TYPE)]. Run with: ./$(TARGET)"
+	@echo "Build finished. Run with: ./$(TARGET)"
 
+# Rule to compile .cpp files into .o files
 $(BUILDDIR)/%.o: $(SRCDIR)/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
+# Clean up
 clean:
 	@echo "Cleaning project..."
 	@rm -rf $(BUILDDIR)/* $(BINDIR)/*
 
-# Target to build in release mode
-release:
-	$(MAKE) all BUILD_TYPE=RELEASE
-
-.PHONY: all clean release
+# Phony targets
+.PHONY: all clean

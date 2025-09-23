@@ -3,6 +3,13 @@
 #include "Model.hpp"
 #include "Logger.hpp"
 
+#include "parser/HtmlTokenizer.hpp"
+#include "parser/HtmlParser.hpp"
+#include "parser/CssParser.hpp"
+#include "parser/StyleApplier.hpp"
+#include "layout/LayoutEngine.hpp"
+#include "layout/DisplayList.hpp"
+
 #include <stdexcept>
 #include <set>
 #include <algorithm>
@@ -17,7 +24,7 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR&, GLFWwindow*);
 VulkanEngine::VulkanEngine() { Log::info("VulkanEngine created."); }
 
 VulkanEngine::~VulkanEngine() {
-    m_model.reset();
+    m_renderObjects.clear();
     m_pipeline.reset();
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     if (m_renderPass) vkDestroyRenderPass(m_device, m_renderPass, nullptr);
@@ -48,7 +55,7 @@ void VulkanEngine::init(GLFWwindow* window) {
     createPipeline();
     createFramebuffers();
     createCommandPool();
-    loadModels();
+    buildRenderObjects(); // Our new full pipeline
     createCommandBuffers();
     createSyncObjects();
     Log::info("Vulkan Engine initialization complete.");
@@ -85,13 +92,68 @@ void VulkanEngine::drawFrame() {
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void VulkanEngine::loadModels() {
-    std::vector<Model::Vertex> vertices = {
-        {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
-    };
-    m_model = std::make_unique<Model>(m_physicalDevice, m_device, vertices);
+void VulkanEngine::buildRenderObjects() {
+    Log::info("--- Building Render Objects ---");
+    std::string html = "<body><div><p></p><p></p></div></body>";
+    std::string css = R"(
+        body { background: gray; }
+        div { background: white; }
+        p { background: black; }
+    )";
+
+    auto domRoot = HtmlParser(HtmlTokenizer(html).tokenize()).parse();
+    auto stylesheet = CssParser(css).parse();
+    auto styleRoot = StyleApplier::applyStyles(*domRoot, stylesheet);
+    auto layoutRoot = LayoutEngine::buildLayoutTree(*styleRoot);
+    DisplayList displayList = buildDisplayList(*layoutRoot);
+    
+    float screenWidth = 800.0f;
+    float screenHeight = 600.0f;
+
+    for (const auto& command : displayList) {
+        float x = (command.rect.x / screenWidth) * 2.0f - 1.0f;
+        float y = (command.rect.y / screenHeight) * 2.0f - 1.0f;
+        float w = (command.rect.width / screenWidth) * 2.0f;
+        float h = (command.rect.height / screenHeight) * 2.0f;
+
+        y = -y;
+        h = -h;
+
+        std::vector<Model::Vertex> vertices = {
+            {{x, y}, {1.0f, 1.0f, 1.0f}}, {{x + w, y}, {1.0f, 1.0f, 1.0f}}, {{x + w, y + h}, {1.0f, 1.0f, 1.0f}},
+            {{x + w, y + h}, {1.0f, 1.0f, 1.0f}}, {{x, y + h}, {1.0f, 1.0f, 1.0f}}, {{x, y}, {1.0f, 1.0f, 1.0f}}
+        };
+        m_renderObjects.push_back(std::make_unique<Model>(m_physicalDevice, m_device, vertices));
+    }
+    Log::info("Created " + std::to_string(m_renderObjects.size()) + " render objects from display list.");
+}
+
+void VulkanEngine::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+    VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    
+    VkRenderPassBeginInfo renderPassInfo{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    renderPassInfo.renderPass = m_renderPass;
+    renderPassInfo.framebuffer = m_swapchainFramebuffers[imageIndex];
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = m_swapchainExtent;
+    VkClearValue clearColor = {{{0.1f, 0.1f, 0.1f, 1.0f}}};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearColor;
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        m_pipeline->bind(commandBuffer);
+        VkViewport viewport{0.0f, 0.0f, (float)m_swapchainExtent.width, (float)m_swapchainExtent.height, 0.0f, 1.0f};
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+        VkRect2D scissor{{0, 0}, m_swapchainExtent};
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+        
+        for (const auto& obj : m_renderObjects) {
+            obj->bind(commandBuffer);
+            obj->draw(commandBuffer);
+        }
+    vkCmdEndRenderPass(commandBuffer);
+    vkEndCommandBuffer(commandBuffer);
 }
 
 void VulkanEngine::createInstance() {
@@ -321,31 +383,6 @@ void VulkanEngine::createSyncObjects() {
             throw std::runtime_error("failed to create sync objects for a frame!");
     }
     Log::info("Synchronization objects created.");
-}
-
-void VulkanEngine::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
-    VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
-        throw std::runtime_error("failed to begin recording command buffer!");
-    VkRenderPassBeginInfo renderPassInfo{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-    renderPassInfo.renderPass = m_renderPass;
-    renderPassInfo.framebuffer = m_swapchainFramebuffers[imageIndex];
-    renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = m_swapchainExtent;
-    VkClearValue clearColor = {{{0.1f, 0.1f, 0.1f, 1.0f}}};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-        m_pipeline->bind(commandBuffer);
-        VkViewport viewport{0.0f, 0.0f, (float)m_swapchainExtent.width, (float)m_swapchainExtent.height, 0.0f, 1.0f};
-        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-        VkRect2D scissor{{0, 0}, m_swapchainExtent};
-        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-        m_model->bind(commandBuffer);
-        m_model->draw(commandBuffer);
-    vkCmdEndRenderPass(commandBuffer);
-    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
-        throw std::runtime_error("failed to record command buffer!");
 }
 
 bool VulkanEngine::isDeviceSuitable(VkPhysicalDevice device) {
