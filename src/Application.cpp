@@ -1,6 +1,6 @@
 #include "Application.hpp"
 #include "Logger.hpp"
-#include "VulkanEngine.hpp" // Include our new engine
+#include "VulkanEngine.hpp"
 #include <stdexcept>
 #include <utility>
 
@@ -17,21 +17,19 @@ Application::~Application() {
 
 void Application::run() {
     setupWindow();
-    m_vulkanEngine->init(); // Initialize Vulkan after the window
+    // Pass the window handle to the engine
+    m_vulkanEngine->init(m_window);
     mainLoop();
 }
 
 void Application::setupWindow() {
     glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
-
     if (!glfwInit()) {
         Log::error("Failed to initialize GLFW");
         throw std::runtime_error("GLFW init failed");
     }
-    
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
     m_window = glfwCreateWindow(m_width, m_height, m_title.c_str(), nullptr, nullptr);
     if (!m_window) {
         Log::error("Failed to create GLFW window");
@@ -50,7 +48,6 @@ void Application::mainLoop() {
 }
 
 void Application::teardown() {
-    // Vulkan engine will be destroyed automatically by unique_ptr
     if (m_window) {
         glfwDestroyWindow(m_window);
         Log::info("Window destroyed.");
