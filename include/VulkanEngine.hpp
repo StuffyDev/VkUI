@@ -4,10 +4,9 @@
 #include <GLFW/glfw3.h>
 #include <optional>
 #include <vector>
-#include <memory> // For std::unique_ptr
+#include <memory>
 
-// Forward declaration
-class Pipeline;
+class Pipeline; // Forward declaration
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -33,9 +32,9 @@ private:
     void createSwapchain(GLFWwindow* window);
     void createImageViews();
     void createRenderPass();
-    void createGraphicsPipeline(); // We keep this name for clarity
+    void createPipelineLayout();
+    void createPipeline(); // Renamed from createGraphicsPipeline
 
-    // Helper functions
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
     bool isDeviceSuitable(VkPhysicalDevice device);
 
@@ -54,6 +53,6 @@ private:
     
     VkRenderPass m_renderPass;
     VkPipelineLayout m_pipelineLayout;
-    
-    std::unique_ptr<Pipeline> m_pipeline; // Our new pipeline object
+
+    std::unique_ptr<Pipeline> m_pipeline;
 };

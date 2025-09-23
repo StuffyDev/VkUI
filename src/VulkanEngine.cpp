@@ -1,10 +1,8 @@
 #include "VulkanEngine.hpp"
-#include "Pipeline.hpp" // Include our new class
+#include "Pipeline.hpp"
 #include "Logger.hpp"
 
 #include <stdexcept>
-#include <vector>
-#include <string>
 #include <set>
 #include <algorithm>
 
@@ -14,39 +12,33 @@ struct SwapchainSupportDetails {
     std::vector<VkSurfaceFormatKHR> formats;
     std::vector<VkPresentModeKHR> presentModes;
 };
-
-// Function prototypes for helpers still in this file
 SwapchainSupportDetails querySwapchainSupport(VkPhysicalDevice, VkSurfaceKHR);
 VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>&);
 VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>&);
 VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR&, GLFWwindow*);
 
-
 VulkanEngine::VulkanEngine() { Log::info("VulkanEngine created."); }
 
 VulkanEngine::~VulkanEngine() {
-    // Pipeline is destroyed by unique_ptr automatically
-    if (m_pipelineLayout) {
-        vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
-        Log::info("Pipeline layout destroyed.");
-    }
-    if (m_renderPass) {
-        vkDestroyRenderPass(m_device, m_renderPass, nullptr);
-        Log::info("Render pass destroyed.");
-    }
-    for (auto imageView : m_swapchainImageViews) {
-        vkDestroyImageView(m_device, imageView, nullptr);
-    }
-    Log::info("Swapchain ImageViews destroyed.");
+    m_pipeline.reset();
+    Log::info("Pipeline object destroyed.");
+    
+    if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+    if (m_renderPass) vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+    Log::info("Pipeline layout and render pass destroyed.");
 
+    for (auto iv : m_swapchainImageViews) vkDestroyImageView(m_device, iv, nullptr);
     if (m_swapchain) vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+    Log::info("Swapchain resources destroyed.");
+
     if (m_device) vkDestroyDevice(m_device, nullptr);
+    Log::info("Logical device destroyed.");
+
     if (m_surface) vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
     if (m_instance) vkDestroyInstance(m_instance, nullptr);
+    Log::info("Vulkan instance and surface destroyed.");
     
-    // Log destruction after it happens
-    Log::info("Core Vulkan objects destroyed.");
-    Log::info("VulkanEngine destroyed.");
+    Log::info("VulkanEngine cleaned up and destroyed.");
 }
 
 void VulkanEngine::init(GLFWwindow* window) {
@@ -57,135 +49,78 @@ void VulkanEngine::init(GLFWwindow* window) {
     createSwapchain(window);
     createImageViews();
     createRenderPass();
-    createGraphicsPipeline();
+    createPipelineLayout();
+    createPipeline();
 }
-void VulkanEngine::createRenderPass() {
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = m_swapchainImageFormat;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+void VulkanEngine::createInstance() {
+    VkApplicationInfo appInfo{VK_STRUCTURE_TYPE_APPLICATION_INFO};
+    appInfo.pApplicationName = "VkUI Engine";
+    appInfo.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
+    appInfo.pEngineName = "No Engine";
+    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_2;
+    VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+    info.pApplicationInfo = &appInfo;
+    uint32_t glfwExtensionCount = 0;
+    const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+    info.enabledExtensionCount = glfwExtensionCount;
+    info.ppEnabledExtensionNames = glfwExtensions;
+    if (vkCreateInstance(&info, nullptr, &m_instance) != VK_SUCCESS)
+        throw std::runtime_error("failed to create instance!");
+    Log::info("Vulkan instance created.");
+}
 
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
-    
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+void VulkanEngine::createSurface(GLFWwindow* window) {
+    if (glfwCreateWindowSurface(m_instance, window, nullptr, &m_surface) != VK_SUCCESS)
+        throw std::runtime_error("failed to create window surface!");
+    Log::info("Vulkan surface created.");
+}
 
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &dependency;
-
-    if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create render pass!");
+void VulkanEngine::pickPhysicalDevice() {
+    uint32_t count = 0;
+    vkEnumeratePhysicalDevices(m_instance, &count, nullptr);
+    if (count == 0) throw std::runtime_error("failed to find GPUs with Vulkan support!");
+    std::vector<VkPhysicalDevice> devices(count);
+    vkEnumeratePhysicalDevices(m_instance, &count, devices.data());
+    for (const auto& device : devices) {
+        if (isDeviceSuitable(device)) {
+            m_physicalDevice = device;
+            break;
+        }
     }
-    Log::info("Render pass created successfully.");
+    if (m_physicalDevice == VK_NULL_HANDLE) throw std::runtime_error("failed to find a suitable GPU!");
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
+    Log::info("Selected physical device: " + std::string(props.deviceName));
 }
 
-void VulkanEngine::createGraphicsPipeline() {
-    // This is the part that changed the most
-    m_pipeline = std::make_unique<Pipeline>(m_device, "shaders/vert.spv", "shaders/frag.spv");
-    Log::info("Pipeline object created.");
-
-    // We still configure the rest of the pipeline here in the engine
-    // because it depends on engine-specific state like swapchain extent.
-    
-    // For now, no vertex data will be sent
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
-    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 0;
-    vertexInputInfo.vertexAttributeDescriptionCount = 0;
-
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
-
-    // Viewport and Scissor will be dynamic, so we just specify the count
-    VkPipelineViewportStateCreateInfo viewportState{};
-    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.scissorCount = 1;
-
-    // --- The rest of the pipeline state is mostly fixed for now ---
-    VkPipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-    rasterizer.depthBiasEnable = VK_FALSE;
-
-    VkPipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-
-    VkPipelineColorBlendStateCreateInfo colorBlending{};
-    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
-
-    std::vector<VkDynamicState> dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-    VkPipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    dynamicState.pDynamicStates = dynamicStates.data();
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-
-    if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create pipeline layout!");
+void VulkanEngine::createLogicalDevice() {
+    QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+    float queuePriority = 1.0f;
+    for (uint32_t queueFamily : uniqueQueueFamilies) {
+        VkDeviceQueueCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+        info.queueFamilyIndex = queueFamily;
+        info.queueCount = 1;
+        info.pQueuePriorities = &queuePriority;
+        queueCreateInfos.push_back(info);
     }
-    Log::info("Pipeline layout created successfully.");
-    
-    // We haven't finished the Pipeline class yet. The actual vkCreateGraphicsPipelines
-    // call needs to be moved there. For now, this step will be incomplete.
-    Log::warn("Graphics pipeline *creation* is deferred. Only layout is created for now.");
+    VkPhysicalDeviceFeatures features{};
+    VkDeviceCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+    info.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+    info.pQueueCreateInfos = queueCreateInfos.data();
+    info.pEnabledFeatures = &features;
+    info.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+    info.ppEnabledExtensionNames = deviceExtensions.data();
+    if (vkCreateDevice(m_physicalDevice, &info, nullptr, &m_device) != VK_SUCCESS)
+        throw std::runtime_error("failed to create logical device!");
+    vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
+    vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_presentQueue);
+    Log::info("Logical device and queues created.");
 }
-// --- All previous initialization functions are still here ---
-void VulkanEngine::createImageViews() {
-    m_swapchainImageViews.resize(m_swapchainImages.size());
-    for (size_t i = 0; i < m_swapchainImages.size(); i++) {
-        VkImageViewCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        info.image = m_swapchainImages[i];
-        info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        info.format = m_swapchainImageFormat;
-        info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        info.subresourceRange.levelCount = 1;
-        info.subresourceRange.layerCount = 1;
-        if (vkCreateImageView(m_device, &info, nullptr, &m_swapchainImageViews[i]) != VK_SUCCESS)
-            throw std::runtime_error("failed to create image views!");
-    }
-}
+
 void VulkanEngine::createSwapchain(GLFWwindow* window) {
     SwapchainSupportDetails support = querySwapchainSupport(m_physicalDevice, m_surface);
     VkSurfaceFormatKHR format = chooseSwapSurfaceFormat(support.formats);
@@ -222,31 +157,115 @@ void VulkanEngine::createSwapchain(GLFWwindow* window) {
     vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, m_swapchainImages.data());
     m_swapchainImageFormat = format.format;
     m_swapchainExtent = extent;
+    Log::info("Swapchain created.");
 }
-void VulkanEngine::createLogicalDevice() {
-    QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
-    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
-    float queuePriority = 1.0f;
-    for (uint32_t queueFamily : uniqueQueueFamilies) {
-        VkDeviceQueueCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
-        info.queueFamilyIndex = queueFamily;
-        info.queueCount = 1;
-        info.pQueuePriorities = &queuePriority;
-        queueCreateInfos.push_back(info);
+
+void VulkanEngine::createImageViews() {
+    m_swapchainImageViews.resize(m_swapchainImages.size());
+    for (size_t i = 0; i < m_swapchainImages.size(); i++) {
+        VkImageViewCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        info.image = m_swapchainImages[i];
+        info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        info.format = m_swapchainImageFormat;
+        info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        info.subresourceRange.levelCount = 1;
+        info.subresourceRange.layerCount = 1;
+        if (vkCreateImageView(m_device, &info, nullptr, &m_swapchainImageViews[i]) != VK_SUCCESS)
+            throw std::runtime_error("failed to create image views!");
     }
-    VkPhysicalDeviceFeatures features{};
-    VkDeviceCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
-    info.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
-    info.pQueueCreateInfos = queueCreateInfos.data();
-    info.pEnabledFeatures = &features;
-    info.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-    info.ppEnabledExtensionNames = deviceExtensions.data();
-    if (vkCreateDevice(m_physicalDevice, &info, nullptr, &m_device) != VK_SUCCESS)
-        throw std::runtime_error("failed to create logical device!");
-    vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
-    vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_presentQueue);
+    Log::info("Swapchain image views created.");
 }
+
+void VulkanEngine::createRenderPass() {
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = m_swapchainImageFormat;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 0;
+    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorAttachmentRef;
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    VkRenderPassCreateInfo renderPassInfo{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
+    if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create render pass!");
+    }
+    Log::info("Render pass created.");
+}
+
+void VulkanEngine::createPipelineLayout() {
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pipelineLayoutInfo.setLayoutCount = 0;
+    pipelineLayoutInfo.pushConstantRangeCount = 0;
+    if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create pipeline layout!");
+    }
+    Log::info("Pipeline layout created.");
+}
+
+void VulkanEngine::createPipeline() {
+    PipelineConfigInfo pipelineConfig{};
+    
+    pipelineConfig.inputAssemblyInfo = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    pipelineConfig.inputAssemblyInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    pipelineConfig.inputAssemblyInfo.primitiveRestartEnable = VK_FALSE;
+
+    pipelineConfig.viewportInfo = {VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    pipelineConfig.viewportInfo.viewportCount = 1;
+    pipelineConfig.viewportInfo.scissorCount = 1;
+
+    pipelineConfig.rasterizationInfo = {VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    pipelineConfig.rasterizationInfo.depthClampEnable = VK_FALSE;
+    pipelineConfig.rasterizationInfo.rasterizerDiscardEnable = VK_FALSE;
+    pipelineConfig.rasterizationInfo.polygonMode = VK_POLYGON_MODE_FILL;
+    pipelineConfig.rasterizationInfo.lineWidth = 1.0f;
+    pipelineConfig.rasterizationInfo.cullMode = VK_CULL_MODE_NONE;
+    pipelineConfig.rasterizationInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    pipelineConfig.rasterizationInfo.depthBiasEnable = VK_FALSE;
+
+    pipelineConfig.multisampleInfo = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+    pipelineConfig.multisampleInfo.sampleShadingEnable = VK_FALSE;
+    pipelineConfig.multisampleInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    pipelineConfig.colorBlendAttachment.colorWriteMask = 0xf;
+    pipelineConfig.colorBlendAttachment.blendEnable = VK_FALSE;
+
+    pipelineConfig.colorBlendInfo = {VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    pipelineConfig.colorBlendInfo.logicOpEnable = VK_FALSE;
+    pipelineConfig.colorBlendInfo.attachmentCount = 1;
+    pipelineConfig.colorBlendInfo.pAttachments = &pipelineConfig.colorBlendAttachment;
+
+    std::vector<VkDynamicState> dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    pipelineConfig.dynamicStateInfo = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+    pipelineConfig.dynamicStateInfo.pDynamicStates = dynamicStates.data();
+    pipelineConfig.dynamicStateInfo.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+
+    pipelineConfig.pipelineLayout = m_pipelineLayout;
+    pipelineConfig.renderPass = m_renderPass;
+    pipelineConfig.subpass = 0;
+
+    m_pipeline = std::make_unique<Pipeline>(m_device, "shaders/vert.spv", "shaders/frag.spv", pipelineConfig);
+}
+
 bool VulkanEngine::isDeviceSuitable(VkPhysicalDevice device) {
     QueueFamilyIndices indices = findQueueFamilies(device);
     uint32_t extensionCount;
@@ -263,6 +282,7 @@ bool VulkanEngine::isDeviceSuitable(VkPhysicalDevice device) {
     }
     return indices.isComplete() && extensionsSupported && swapchainAdequate;
 }
+
 QueueFamilyIndices VulkanEngine::findQueueFamilies(VkPhysicalDevice device) {
     QueueFamilyIndices indices;
     uint32_t count = 0;
@@ -280,40 +300,7 @@ QueueFamilyIndices VulkanEngine::findQueueFamilies(VkPhysicalDevice device) {
     }
     return indices;
 }
-void VulkanEngine::createSurface(GLFWwindow* window) {
-    if (glfwCreateWindowSurface(m_instance, window, nullptr, &m_surface) != VK_SUCCESS)
-        throw std::runtime_error("failed to create window surface!");
-}
-void VulkanEngine::pickPhysicalDevice() {
-    uint32_t count = 0;
-    vkEnumeratePhysicalDevices(m_instance, &count, nullptr);
-    if (count == 0) throw std::runtime_error("failed to find GPUs with Vulkan support!");
-    std::vector<VkPhysicalDevice> devices(count);
-    vkEnumeratePhysicalDevices(m_instance, &count, devices.data());
-    for (const auto& device : devices) {
-        if (isDeviceSuitable(device)) {
-            m_physicalDevice = device;
-            break;
-        }
-    }
-    if (m_physicalDevice == VK_NULL_HANDLE) throw std::runtime_error("failed to find a suitable GPU!");
-}
-void VulkanEngine::createInstance() {
-    VkApplicationInfo appInfo{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    appInfo.pApplicationName = "VkUI Engine";
-    appInfo.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
-    appInfo.pEngineName = "No Engine";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_2;
-    VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
-    info.pApplicationInfo = &appInfo;
-    uint32_t glfwExtensionCount = 0;
-    const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-    info.enabledExtensionCount = glfwExtensionCount;
-    info.ppEnabledExtensionNames = glfwExtensions;
-    if (vkCreateInstance(&info, nullptr, &m_instance) != VK_SUCCESS)
-        throw std::runtime_error("failed to create instance!");
-}
+
 SwapchainSupportDetails querySwapchainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {
     SwapchainSupportDetails details;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
