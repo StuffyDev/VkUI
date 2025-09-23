@@ -17,41 +17,35 @@ Application::~Application() {
 
 void Application::run() {
     setupWindow();
-    // Pass the window handle to the engine
     m_vulkanEngine->init(m_window);
     mainLoop();
 }
 
 void Application::setupWindow() {
+    // Corrected the typo here
     glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
-    if (!glfwInit()) {
-        Log::error("Failed to initialize GLFW");
-        throw std::runtime_error("GLFW init failed");
-    }
+    if (!glfwInit()) throw std::runtime_error("GLFW init failed");
+    
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     m_window = glfwCreateWindow(m_width, m_height, m_title.c_str(), nullptr, nullptr);
-    if (!m_window) {
-        Log::error("Failed to create GLFW window");
-        throw std::runtime_error("GLFW window creation failed");
-    }
-    Log::info("Window created successfully.");
+    if (!m_window) throw std::runtime_error("GLFW window creation failed");
 }
 
 void Application::mainLoop() {
     Log::info("Starting main loop...");
     while (!glfwWindowShouldClose(m_window)) {
         glfwPollEvents();
-        // Drawing will happen here
+        m_vulkanEngine->drawFrame(); // Draw every frame
     }
     Log::info("Main loop finished.");
+    // Wait for the device to finish all operations before we start cleaning up
+    vkDeviceWaitIdle(m_vulkanEngine->getDevice());
 }
 
 void Application::teardown() {
-    if (m_window) {
-        glfwDestroyWindow(m_window);
-        Log::info("Window destroyed.");
-    }
+    // m_vulkanEngine is destroyed automatically after this function
+    if (m_window) glfwDestroyWindow(m_window);
     glfwTerminate();
-    Log::info("GLFW terminated.");
+    Log::info("Window and GLFW terminated.");
 }

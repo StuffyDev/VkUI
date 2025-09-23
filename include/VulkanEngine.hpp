@@ -6,7 +6,7 @@
 #include <vector>
 #include <memory>
 
-class Pipeline; // Forward declaration
+class Pipeline; 
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -23,8 +23,16 @@ public:
     VulkanEngine& operator=(const VulkanEngine&) = delete;
 
     void init(GLFWwindow* window);
+    void drawFrame();
+    VkDevice getDevice() const { return m_device; }
 
 private:
+    void createFramebuffers();
+    void createCommandPool();
+    void createCommandBuffers();
+    void createSyncObjects();
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+    
     void createInstance();
     void createSurface(GLFWwindow* window);
     void pickPhysicalDevice();
@@ -33,7 +41,7 @@ private:
     void createImageViews();
     void createRenderPass();
     void createPipelineLayout();
-    void createPipeline(); // Renamed from createGraphicsPipeline
+    void createPipeline();
 
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
     bool isDeviceSuitable(VkPhysicalDevice device);
@@ -48,11 +56,20 @@ private:
     VkSwapchainKHR m_swapchain;
     std::vector<VkImage> m_swapchainImages;
     std::vector<VkImageView> m_swapchainImageViews;
+    std::vector<VkFramebuffer> m_swapchainFramebuffers;
     VkFormat m_swapchainImageFormat;
     VkExtent2D m_swapchainExtent;
     
     VkRenderPass m_renderPass;
     VkPipelineLayout m_pipelineLayout;
-
     std::unique_ptr<Pipeline> m_pipeline;
+
+    VkCommandPool m_commandPool;
+    std::vector<VkCommandBuffer> m_commandBuffers;
+
+    std::vector<VkSemaphore> m_imageAvailableSemaphores;
+    std::vector<VkSemaphore> m_renderFinishedSemaphores;
+    std::vector<VkFence> m_inFlightFences;
+    uint32_t m_currentFrame = 0;
+    const int MAX_FRAMES_IN_FLIGHT = 2;
 };
