@@ -3,6 +3,10 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <string>
+#include <memory>
+
+// Forward declaration
+class VulkanEngine;
 
 class Application {
 public:
@@ -25,4 +29,5 @@ private:
     std::string m_title;
 
     GLFWwindow* m_window;
+    std::unique_ptr<VulkanEngine> m_vulkanEngine;
 };
