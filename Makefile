@@ -1,48 +1,53 @@
-# Компилятор
+# Compiler
 CXX = g++
 
-# Флаги компилятора
-# -std=c++17: используем стандарт C++17
-# -g: добавляем отладочную информацию
-# -Wall: включаем все предупреждения
-CXXFLAGS = -std=c++17 -g -Wall
-
-# Директории
+# Directories
 SRCDIR = src
 INCDIR = include
 BUILDDIR = build
 BINDIR = bin
-
-# Имя исполняемого файла
 TARGET = $(BINDIR)/vkui_app
 
-# Исходники и объектные файлы
+# Default build type is DEBUG
+BUILD_TYPE ?= DEBUG
+
+# Compiler flags
+CXXFLAGS = -std=c++17 -Wall -I$(INCDIR)
+ifeq ($(BUILD_TYPE), DEBUG)
+	CXXFLAGS += -g
+	# In DEBUG mode, we define _DEBUG macro
+	CPPFLAGS += -D_DEBUG
+else
+	CXXFLAGS += -O3
+	# In RELEASE mode, we define NDEBUG to disable asserts and validation layers
+	CPPFLAGS += -DNDEBUG
+endif
+
+# Sources and Objects
 SOURCES = $(wildcard $(SRCDIR)/*.cpp)
 OBJECTS = $(patsubst $(SRCDIR)/%.cpp, $(BUILDDIR)/%.o, $(SOURCES))
 
-# Флаги для подключения библиотек
-# Используем pkg-config для автоматического поиска путей к Vulkan и GLFW
-INCLUDES = -I$(INCDIR)
+# Linker flags from pkg-config
 LDFLAGS = $(shell pkg-config --libs glfw3 vulkan)
 
-# Цель по умолчанию (первая в файле)
+# Default target
 all: $(TARGET)
 
-# Правило для сборки исполняемого файла
 $(TARGET): $(OBJECTS)
 	@mkdir -p $(dir $@)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
-	@echo "Сборка завершена. Запусти приложение командой: ./$(TARGET)"
+	@echo "Build finished [$(BUILD_TYPE)]. Run with: ./$(TARGET)"
 
-# Правило для компиляции .cpp файлов в .o файлы
 $(BUILDDIR)/%.o: $(SRCDIR)/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 
-# Очистка
 clean:
-	@echo "Очистка проекта..."
+	@echo "Cleaning project..."
 	@rm -rf $(BUILDDIR)/* $(BINDIR)/*
 
-# Псевдо-цели
-.PHONY: all clean
+# Target to build in release mode
+release:
+	$(MAKE) all BUILD_TYPE=RELEASE
+
+.PHONY: all clean release

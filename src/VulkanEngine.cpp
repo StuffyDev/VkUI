@@ -3,11 +3,12 @@
 
 #include <stdexcept>
 #include <vector>
+#include <string>
 
-// We'll need GLFW to get the required extensions for window system integration
 #include <GLFW/glfw3.h>
 
-VulkanEngine::VulkanEngine() : m_instance(VK_NULL_HANDLE) {
+VulkanEngine::VulkanEngine() 
+    : m_instance(VK_NULL_HANDLE), m_physicalDevice(VK_NULL_HANDLE) {
     Log::info("VulkanEngine created.");
 }
 
@@ -21,10 +22,10 @@ VulkanEngine::~VulkanEngine() {
 
 void VulkanEngine::init() {
     createInstance();
+    pickPhysicalDevice();
 }
 
 void VulkanEngine::createInstance() {
-    // Application Info: tells the driver about our app. Optional, but good practice.
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "VkUI Engine";
@@ -33,27 +34,71 @@ void VulkanEngine::createInstance() {
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.apiVersion = VK_API_VERSION_1_2;
 
-    // Instance Create Info: the main struct for creating the instance.
     VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
 
-    // Get required extensions from GLFW
     uint32_t glfwExtensionCount = 0;
     const char** glfwExtensions;
     glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
     
     createInfo.enabledExtensionCount = glfwExtensionCount;
     createInfo.ppEnabledExtensionNames = glfwExtensions;
-
-    // For now, no validation layers
     createInfo.enabledLayerCount = 0;
 
-    // Create the instance!
-    VkResult result = vkCreateInstance(&createInfo, nullptr, &m_instance);
-    if (result != VK_SUCCESS) {
+    if (vkCreateInstance(&createInfo, nullptr, &m_instance) != VK_SUCCESS) {
         Log::error("Failed to create Vulkan instance!");
         throw std::runtime_error("Vulkan instance creation failed");
     }
     Log::info("Vulkan instance created successfully.");
+}
+
+void VulkanEngine::pickPhysicalDevice() {
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
+
+    if (deviceCount == 0) {
+        Log::error("Failed to find GPUs with Vulkan support!");
+        throw std::runtime_error("No Vulkan-compatible GPUs found");
+    }
+
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+    vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
+
+    Log::info("Found " + std::to_string(deviceCount) + " GPU(s).");
+
+    // Find a suitable device
+    for (const auto& device : devices) {
+        if (isDeviceSuitable(device)) {
+            m_physicalDevice = device;
+            break;
+        }
+    }
+
+    if (m_physicalDevice == VK_NULL_HANDLE) {
+        Log::error("Failed to find a suitable GPU!");
+        throw std::runtime_error("No suitable GPU found");
+    }
+
+    // Log the name of the selected device for clarity
+    VkPhysicalDeviceProperties deviceProperties;
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
+    Log::info("Selected physical device: " + std::string(deviceProperties.deviceName));
+}
+
+bool VulkanEngine::isDeviceSuitable(VkPhysicalDevice device) {
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+    // We are looking for a queue family that supports graphics operations
+    for (const auto& queueFamily : queueFamilies) {
+        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            return true; // Found one!
+        }
+    }
+
+    return false; // No graphics queue family found
 }

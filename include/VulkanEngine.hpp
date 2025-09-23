@@ -10,13 +10,16 @@ public:
     // Make it non-copyable
     VulkanEngine(const VulkanEngine&) = delete;
     VulkanEngine& operator=(const VulkanEngine&) = delete;
-    
+
     void init();
 
 private:
     void createInstance();
-    void setupDebugMessenger();
     void pickPhysicalDevice();
+    
+    // Helper function to check if a device is suitable
+    bool isDeviceSuitable(VkPhysicalDevice device);
 
     VkInstance m_instance;
+    VkPhysicalDevice m_physicalDevice; // Handle for the selected GPU
 };
