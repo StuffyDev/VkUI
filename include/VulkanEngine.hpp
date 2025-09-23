@@ -4,14 +4,15 @@
 #include <GLFW/glfw3.h>
 #include <optional>
 #include <vector>
+#include <memory> // For std::unique_ptr
+
+// Forward declaration
+class Pipeline;
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
-
-    bool isComplete() {
-        return graphicsFamily.has_value() && presentFamily.has_value();
-    }
+    bool isComplete() { return graphicsFamily.has_value() && presentFamily.has_value(); }
 };
 
 class VulkanEngine {
@@ -30,7 +31,9 @@ private:
     void pickPhysicalDevice();
     void createLogicalDevice();
     void createSwapchain(GLFWwindow* window);
-    void createImageViews(); // Our new function
+    void createImageViews();
+    void createRenderPass();
+    void createGraphicsPipeline(); // We keep this name for clarity
 
     // Helper functions
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
@@ -45,7 +48,12 @@ private:
 
     VkSwapchainKHR m_swapchain;
     std::vector<VkImage> m_swapchainImages;
-    std::vector<VkImageView> m_swapchainImageViews; // <-- New field
+    std::vector<VkImageView> m_swapchainImageViews;
     VkFormat m_swapchainImageFormat;
     VkExtent2D m_swapchainExtent;
+    
+    VkRenderPass m_renderPass;
+    VkPipelineLayout m_pipelineLayout;
+    
+    std::unique_ptr<Pipeline> m_pipeline; // Our new pipeline object
 };
