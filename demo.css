@@ -1,0 +1,21 @@
+body {
+    background-color: #000000;
+}
+
+div {
+    background: #fbf1c7;
+    margin-top: 50px;
+    margin-left: 50px;
+    padding: 25px;
+}
+
+p {
+    background: #98971a;
+    height: 50px;
+    margin-top: 10px;
+}
+
+.b {
+    background: #d65d0e;
+    height: 100px;
+}

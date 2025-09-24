@@ -1,12 +1,13 @@
 #pragma once
 
 #include "LayoutBox.hpp"
+#include "../utils/Color.hpp" // <-- Подключаем нашу утилиту
 #include <vector>
 
-// For now, our only command is to draw a solid rectangle
+// Команда на отрисовку теперь содержит и цвет
 struct SolidRectCommand {
     Rect rect;
-    // TODO: Add color
+    Color color;
 };
 
 using DisplayList = std::vector<SolidRectCommand>;

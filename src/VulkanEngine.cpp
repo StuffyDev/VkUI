@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <set>
 #include <algorithm>
+#include <vector>
 
 const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 struct SwapchainSupportDetails { VkSurfaceCapabilitiesKHR capabilities; std::vector<VkSurfaceFormatKHR> formats; std::vector<VkPresentModeKHR> presentModes; };
@@ -43,7 +44,7 @@ VulkanEngine::~VulkanEngine() {
     Log::info("VulkanEngine cleaned up and destroyed.");
 }
 
-void VulkanEngine::init(GLFWwindow* window) {
+void VulkanEngine::init(GLFWwindow* window, const std::string& htmlContent, const std::string& cssContent) {
     createInstance();
     createSurface(window);
     pickPhysicalDevice();
@@ -55,7 +56,7 @@ void VulkanEngine::init(GLFWwindow* window) {
     createPipeline();
     createFramebuffers();
     createCommandPool();
-    buildRenderObjects(); // Our new full pipeline
+    buildRenderObjects(htmlContent, cssContent);
     createCommandBuffers();
     createSyncObjects();
     Log::info("Vulkan Engine initialization complete.");
@@ -92,46 +93,37 @@ void VulkanEngine::drawFrame() {
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void VulkanEngine::buildRenderObjects() {
-    Log::info("--- Building Render Objects ---");
-    std::string html = "<body><div><p></p><p></p></div></body>";
-    std::string css = R"(
-        body { background: gray; }
-        div { background: white; }
-        p { background: black; }
-    )";
-
-    auto domRoot = HtmlParser(HtmlTokenizer(html).tokenize()).parse();
-    auto stylesheet = CssParser(css).parse();
+void VulkanEngine::buildRenderObjects(const std::string& htmlContent, const std::string& cssContent) {
+    Log::info("--- Building Render Pipeline ---");
+    auto tokens = HtmlTokenizer(htmlContent).tokenize();
+    auto domRoot = HtmlParser(tokens).parse();
+    auto stylesheet = CssParser(cssContent).parse();
     auto styleRoot = StyleApplier::applyStyles(*domRoot, stylesheet);
     auto layoutRoot = LayoutEngine::buildLayoutTree(*styleRoot);
     DisplayList displayList = buildDisplayList(*layoutRoot);
     
-    float screenWidth = 800.0f;
-    float screenHeight = 600.0f;
-
+    float screenWidth = m_swapchainExtent.width;
+    float screenHeight = m_swapchainExtent.height;
     for (const auto& command : displayList) {
+        float r = command.color.r / 255.0f;
+        float g = command.color.g / 255.0f;
+        float b = command.color.b / 255.0f;
         float x = (command.rect.x / screenWidth) * 2.0f - 1.0f;
         float y = (command.rect.y / screenHeight) * 2.0f - 1.0f;
         float w = (command.rect.width / screenWidth) * 2.0f;
         float h = (command.rect.height / screenHeight) * 2.0f;
-
-        y = -y;
-        h = -h;
-
         std::vector<Model::Vertex> vertices = {
-            {{x, y}, {1.0f, 1.0f, 1.0f}}, {{x + w, y}, {1.0f, 1.0f, 1.0f}}, {{x + w, y + h}, {1.0f, 1.0f, 1.0f}},
-            {{x + w, y + h}, {1.0f, 1.0f, 1.0f}}, {{x, y + h}, {1.0f, 1.0f, 1.0f}}, {{x, y}, {1.0f, 1.0f, 1.0f}}
+            {{x, y}, {r, g, b}}, {{x + w, y}, {r, g, b}}, {{x + w, y + h}, {r, g, b}},
+            {{x + w, y + h}, {r, g, b}}, {{x, y + h}, {r, g, b}}, {{x, y}, {r, g, b}}
         };
         m_renderObjects.push_back(std::make_unique<Model>(m_physicalDevice, m_device, vertices));
     }
-    Log::info("Created " + std::to_string(m_renderObjects.size()) + " render objects from display list.");
+    Log::info("Created " + std::to_string(m_renderObjects.size()) + " render objects.");
 }
 
 void VulkanEngine::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
     VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
-    
     VkRenderPassBeginInfo renderPassInfo{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     renderPassInfo.renderPass = m_renderPass;
     renderPassInfo.framebuffer = m_swapchainFramebuffers[imageIndex];
@@ -140,18 +132,16 @@ void VulkanEngine::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t i
     VkClearValue clearColor = {{{0.1f, 0.1f, 0.1f, 1.0f}}};
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearColor;
-
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-        m_pipeline->bind(commandBuffer);
-        VkViewport viewport{0.0f, 0.0f, (float)m_swapchainExtent.width, (float)m_swapchainExtent.height, 0.0f, 1.0f};
-        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-        VkRect2D scissor{{0, 0}, m_swapchainExtent};
-        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-        
-        for (const auto& obj : m_renderObjects) {
-            obj->bind(commandBuffer);
-            obj->draw(commandBuffer);
-        }
+    m_pipeline->bind(commandBuffer);
+    VkViewport viewport{0.0f, 0.0f, (float)m_swapchainExtent.width, (float)m_swapchainExtent.height, 0.0f, 1.0f};
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    VkRect2D scissor{{0, 0}, m_swapchainExtent};
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    for (const auto& obj : m_renderObjects) {
+        obj->bind(commandBuffer);
+        obj->draw(commandBuffer);
+    }
     vkCmdEndRenderPass(commandBuffer);
     vkEndCommandBuffer(commandBuffer);
 }

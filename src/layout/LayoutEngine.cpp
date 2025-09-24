@@ -1,60 +1,65 @@
 #include "layout/LayoutEngine.hpp"
+#include "parser/StyledNode.hpp"
 #include <string>
+#include <algorithm>
 
-// Static entry point
-std::unique_ptr<LayoutBox> LayoutEngine::buildLayoutTree(const StyledNode& styledRoot) {
-    LayoutEngine engine;
-    
-    // For now, the root containing block is the whole window.
-    // Let's assume a window of 800x600.
-    engine.m_containingBlock = {0.0f, 0.0f, 800.0f, 600.0f};
-
-    // Build the tree structure first
-    auto layoutRoot = std::make_unique<LayoutBox>(styledRoot);
-    for (const auto& child : styledRoot.children) {
-        // Skip text nodes that are all whitespace
-        if (child->domNode.type == NodeType::TEXT_NODE) {
-            size_t first = child->domNode.value.find_first_not_of(" \t\n\r");
-            if (std::string::npos == first) continue;
-        }
-        layoutRoot->children.push_back(buildLayoutTree(*child));
+float get_px_value(const PropertyMap& values, const std::string& name, float fallback) {
+    auto it = values.find(name);
+    if (it != values.end()) {
+        try {
+            std::string val_str = it->second;
+            size_t px_pos = val_str.find("px");
+            if (px_pos != std::string::npos) val_str.erase(px_pos, 2);
+            return std::stof(val_str);
+        } catch (...) { return fallback; }
     }
+    return fallback;
+}
 
-    // Now, calculate the dimensions and positions
-    engine.layout(*layoutRoot, engine.m_containingBlock);
-    
+static std::unique_ptr<LayoutBox> build_box_tree(const StyledNode& styledRoot) {
+    auto box = std::make_unique<LayoutBox>(styledRoot);
+    for (const auto& child_node : styledRoot.children) {
+        if (child_node->domNode.type == NodeType::TEXT_NODE && 
+            child_node->domNode.value.find_first_not_of(" \t\n\r") == std::string::npos) {
+            continue;
+        }
+        box->children.push_back(build_box_tree(*child_node));
+    }
+    return box;
+}
+
+std::unique_ptr<LayoutBox> LayoutEngine::buildLayoutTree(const StyledNode& styledRoot) {
+    auto layoutRoot = build_box_tree(styledRoot);
+    if (layoutRoot) {
+        LayoutEngine engine;
+        Rect initialContainingBlock = {0.0f, 0.0f, 800.0f, 600.0f};
+        engine.layout(*layoutRoot, initialContainingBlock);
+    }
     return layoutRoot;
 }
 
 void LayoutEngine::layout(LayoutBox& box, const Rect& containingBlock) {
-    if (box.styledNode.domNode.type == NodeType::ELEMENT_NODE) {
-        // --- Calculate dimensions for a block-level element ---
+    if (box.styledNode.domNode.type != NodeType::ELEMENT_NODE) return;
+    auto& values = box.styledNode.specifiedValues;
 
-        // The width is the width of the containing block
-        box.dimensions.x = containingBlock.x;
-        box.dimensions.width = containingBlock.width;
+    box.dimensions.x = containingBlock.x + get_px_value(values, "margin-left", 0.0f);
+    box.dimensions.y = containingBlock.y + get_px_value(values, "margin-top", 0.0f);
+    box.dimensions.width = containingBlock.width;
 
-        // The y position is at the bottom of the previous block
-        box.dimensions.y = containingBlock.y;
-        
-        // --- Layout children ---
-        float currentY = 0.0f;
-        for (auto& child : box.children) {
-            // Each child's containing block starts at the current y offset
-            Rect childContainingBlock = {0.0f, currentY, box.dimensions.width, 0.0f};
-            layout(*child, childContainingBlock);
-            // After laying out a child, move the y offset down by its height
-            currentY += child->dimensions.height;
-        }
+    float padding = get_px_value(values, "padding", 0.0f);
+    float contentX = box.dimensions.x + padding;
+    float contentY = box.dimensions.y + padding;
+    float contentWidth = box.dimensions.width - 2 * padding;
 
-        // --- Calculate height ---
-        // For now, the height of a block is just the sum of its children's heights.
-        // We'll add padding/margin/border later. A box with no children has a fixed height.
-        box.dimensions.height = currentY;
-        if (box.children.empty()) {
-            // Simple placeholder height for elements without children (like <p>)
-            box.dimensions.height = 20.0f; // e.g., line height
-        }
+    float contentHeight = 0.0f;
+    for (auto& child : box.children) {
+        Rect childContainingBlock = { contentX, contentY + contentHeight, contentWidth, 0 };
+        layout(*child, childContainingBlock);
+        contentHeight += get_px_value(child->styledNode.specifiedValues, "margin-top", 0.0f)
+                       + child->dimensions.height
+                       + get_px_value(child->styledNode.specifiedValues, "margin-bottom", 0.0f);
     }
-    // Note: Text nodes currently don't get dimensions. We'll handle them later.
+
+    float specifiedHeight = get_px_value(values, "height", 0.0f);
+    box.dimensions.height = (specifiedHeight > 0) ? specifiedHeight : (contentHeight + 2 * padding);
 }

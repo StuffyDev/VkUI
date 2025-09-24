@@ -5,6 +5,7 @@
 #include <optional>
 #include <vector>
 #include <memory>
+#include <string> // <-- Добавили
 
 class Pipeline; 
 class Model;
@@ -23,12 +24,12 @@ public:
     VulkanEngine(const VulkanEngine&) = delete;
     VulkanEngine& operator=(const VulkanEngine&) = delete;
 
-    void init(GLFWwindow* window);
+    void init(GLFWwindow* window, const std::string& htmlContent, const std::string& cssContent);
     void drawFrame();
     VkDevice getDevice() const { return m_device; }
 
 private:
-    void buildRenderObjects(); // <-- ВОТ ОНО, ИСПРАВЛЕНИЕ
+    void buildRenderObjects(const std::string& htmlContent, const std::string& cssContent); // <-- Изменили
     void createFramebuffers();
     void createCommandPool();
     void createCommandBuffers();

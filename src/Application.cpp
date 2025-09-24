@@ -4,8 +4,13 @@
 #include <stdexcept>
 #include <utility>
 
-Application::Application(int width, int height, std::string title)
-    : m_width(width), m_height(height), m_title(std::move(title)), m_window(nullptr) {
+Application::Application(int width, int height, std::string title, std::string html, std::string css)
+    : m_width(width), 
+      m_height(height), 
+      m_title(std::move(title)), 
+      m_htmlContent(std::move(html)),
+      m_cssContent(std::move(css)),
+      m_window(nullptr) {
     Log::info("Application created.");
     m_vulkanEngine = std::make_unique<VulkanEngine>();
 }
@@ -17,12 +22,11 @@ Application::~Application() {
 
 void Application::run() {
     setupWindow();
-    m_vulkanEngine->init(m_window);
+    m_vulkanEngine->init(m_window, m_htmlContent, m_cssContent); // <-- Передаем контент
     mainLoop();
 }
 
 void Application::setupWindow() {
-    // Corrected the typo here
     glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
     if (!glfwInit()) throw std::runtime_error("GLFW init failed");
     
@@ -36,15 +40,13 @@ void Application::mainLoop() {
     Log::info("Starting main loop...");
     while (!glfwWindowShouldClose(m_window)) {
         glfwPollEvents();
-        m_vulkanEngine->drawFrame(); // Draw every frame
+        m_vulkanEngine->drawFrame();
     }
     Log::info("Main loop finished.");
-    // Wait for the device to finish all operations before we start cleaning up
     vkDeviceWaitIdle(m_vulkanEngine->getDevice());
 }
 
 void Application::teardown() {
-    // m_vulkanEngine is destroyed automatically after this function
     if (m_window) glfwDestroyWindow(m_window);
     glfwTerminate();
     Log::info("Window and GLFW terminated.");
