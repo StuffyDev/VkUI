@@ -8,7 +8,7 @@ using Declaration = std::pair<std::string, std::string>;
 
 struct Selector {
     std::string tagName;
-    std::vector<std::string> classes; // <-- Добавили
+    std::vector<std::string> classes;
 };
 
 struct CssRule {

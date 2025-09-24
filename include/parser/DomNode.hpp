@@ -19,6 +19,5 @@ public:
     NodeType type;
     std::string value;
 
-    // Атрибуты элемента, например: class="main"
     std::map<std::string, std::string> attributes;
 };

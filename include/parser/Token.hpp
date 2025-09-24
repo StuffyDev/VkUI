@@ -2,7 +2,7 @@
 
 #include <string>
 #include <vector>
-#include <map> // <-- Добавили
+#include <map> 
 
 enum class TokenType {
     OPEN_TAG,
@@ -15,5 +15,5 @@ enum class TokenType {
 struct Token {
     TokenType type;
     std::string value;
-    std::map<std::string, std::string> attributes; // <-- Добавили контейнер для атрибутов
+    std::map<std::string, std::string> attributes;
 };

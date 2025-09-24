@@ -5,7 +5,7 @@
 #include <optional>
 #include <vector>
 #include <memory>
-#include <string> // <-- Добавили
+#include <string>
 
 class Pipeline; 
 class Model;

@@ -3,7 +3,7 @@
 #include "CssStructs.hpp"
 #include <string>
 #include <vector>
-#include <functional> // <-- Добавим для std::function
+#include <functional> 
 
 class CssParser {
 public:
@@ -16,7 +16,6 @@ private:
     char consumeChar();
     bool eof() const;
 
-    // Вспомогательная функция, которую я забыл объявить
     std::string consumeWhile(std::function<bool(char)> predicate);
 
     std::string parseIdentifier();
@@ -27,7 +26,7 @@ private:
     CssRule parseRule();
     std::string parseValue();
 
-    // Переменные, которые я случайно удалил
+
     std::string m_source;
     size_t m_pos = 0;
 };

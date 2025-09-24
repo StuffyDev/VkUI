@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include <functional>
-#include <map> // Убедимся, что map подключен
+#include <map>
 
 class HtmlTokenizer {
 public:
@@ -21,7 +21,6 @@ private:
 
     std::string consumeWhile(std::function<bool(char)> predicate);
 
-    // Функции, которые я забыл объявить
     std::string parseAttributeValue();
     std::map<std::string, std::string> parseAttributes();
 
