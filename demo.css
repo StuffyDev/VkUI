@@ -1,5 +1,5 @@
 body {
-    background-color: #000000;
+    background: #282828;
 }
 
 div {
@@ -7,15 +7,18 @@ div {
     margin-top: 50px;
     margin-left: 50px;
     padding: 25px;
+    width: 400px; 
 }
 
 p {
     background: #98971a;
     height: 50px;
     margin-top: 10px;
+    width: 300px; 
 }
 
 .b {
     background: #d65d0e;
     height: 100px;
+    width: 200px; 
 }

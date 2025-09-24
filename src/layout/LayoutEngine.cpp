@@ -42,15 +42,26 @@ void LayoutEngine::layout(LayoutBox& box, const Rect& containingBlock) {
     if (box.styledNode.domNode.type != NodeType::ELEMENT_NODE) return;
     auto& values = box.styledNode.specifiedValues;
 
+    // Сначала определяем ширину блока. Либо из CSS, либо от родителя.
+    float specifiedWidth = get_px_value(values, "width", 0.0f);
+    if (specifiedWidth > 0) {
+        box.dimensions.width = specifiedWidth;
+    } else {
+        box.dimensions.width = containingBlock.width;
+    }
+
+    // Позиционируем блок
     box.dimensions.x = containingBlock.x + get_px_value(values, "margin-left", 0.0f);
     box.dimensions.y = containingBlock.y + get_px_value(values, "margin-top", 0.0f);
-    box.dimensions.width = containingBlock.width;
 
+    // Рассчитываем область для контента (с учетом padding)
     float padding = get_px_value(values, "padding", 0.0f);
     float contentX = box.dimensions.x + padding;
     float contentY = box.dimensions.y + padding;
+    // Ширина контента - это ширина нашего блока минус паддинги
     float contentWidth = box.dimensions.width - 2 * padding;
 
+    // Компонуем дочерние элементы внутри области контента
     float contentHeight = 0.0f;
     for (auto& child : box.children) {
         Rect childContainingBlock = { contentX, contentY + contentHeight, contentWidth, 0 };
@@ -60,6 +71,7 @@ void LayoutEngine::layout(LayoutBox& box, const Rect& containingBlock) {
                        + get_px_value(child->styledNode.specifiedValues, "margin-bottom", 0.0f);
     }
 
+    // Рассчитываем финальную высоту блока
     float specifiedHeight = get_px_value(values, "height", 0.0f);
     box.dimensions.height = (specifiedHeight > 0) ? specifiedHeight : (contentHeight + 2 * padding);
 }
